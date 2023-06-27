@@ -1,0 +1,258 @@
+
+# OSPP 2023
+
+I'll keep this readme file up to date during the whole process of OSPP 2023.
+
+There are two branches:
+- OSPP (current branch) for notes and logs.
+- am009/msvc_support for development
+
+## Summary
+
+It's neither fast nor easy to solve these compilation issues, but I think I can do it.
+
+TODO
+
+## Log
+
+2023-05-16 [OSPP 2023 Challenge](https://github.com/WasmEdge/WasmEdge/discussions/2452) 
+
+2023-05-24 gtest, 
+
+## Task
+
+[Project on OSPP Website](https://summer-ospp.ac.cn/org/prodetail/238830388?lang=zh&list=pro)
+
+[OSPP feat: Enabling WasmEdge Compilation with MSVC Toolchain](https://github.com/WasmEdge/WasmEdge/issues/2437)
+
+[OSPP 2023 Challenge](https://github.com/WasmEdge/WasmEdge/discussions/2452)
+
+## Challenge
+
+https://github.com/WasmEdge/WasmEdge/discussions/2452
+
+1. Challenge1: Use Clang on Windows to build and run tests
+1. Challenge2: Try using MSVC to build.
+
+
+### Challenges
+
+### Challenge2: Try using MSVC to build
+
+To use MSVC to build, I installed MSVC 14.34.31933, and removed `$Env:CC = "clang-cl"` and `$Env:CXX = "clang-cl"` in the build script, and add `-vcvars_ver=14.34.31933`.
+
+```
+# Remove-Item -LiteralPath "build" -Force -Recurse
+$vsPath = (&"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+Import-Module (Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64 -winsdk=10.0.19041.0 -vcvars_ver=14.34.31933"
+$llvm_dir = "C:\\Users\\warren\\my_programs\\LLVM-13.0.1-win64\\lib\\cmake\\llvm"
+# $Env:CC = "cl.exe"
+# $Env:CXX = "cl"
+
+cmake -Bbuild -GNinja -DCMAKE_SYSTEM_VERSION="10.0.19041.0" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL "-DLLVM_DIR=$llvm_dir" -DWASMEDGE_BUILD_TESTS=ON -DWASMEDGE_BUILD_PACKAGE="ZIP" .
+cmake --build build
+```
+
+the first error encountered is:
+```
+cl : Command line error D8021 : invalid numeric argument '/Wextra'
+```
+
+TODO:
+1. When the compiler is MSVC, not add unsupported flags to `WASMEDGE_CFLAGS`, and find equivalent flags instead.
+1. try to find equivalent code in MSVC for [the `int128.h` issue](https://github.com/WasmEdge/WasmEdge/issues/2419)
+
+
+
+#### gtest build error
+
+gtest have `-WX`(regard all warning as error) in their compiler flags (in `build\_deps\gtest-src\googletest\cmake\internal_utils.cmake:75`), but there are still many warnings (which become errors). 
+
+Current solution: supress many warnings in `WasmEdge\test\CMakeLists.txt`.
+
+#### issue log
+
+1. Equivalent flag for `-Wall` `-Wno-xxx` 
+
+    Reference: [MSVC C++ Warning levels](https://learn.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=msvc-170). 
+
+    - For `-Wall` there is `/Wall`.
+    - For `-Wextra`, there seems no equivalent flag?
+    - For `-Werror`, there is `/WX`.
+
+1. Use `if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")` or `if(MSVC)` in cmake.
+
+    It seems better to use `if(MSVC)`. [ref](https://github.com/unittest-cpp/unittest-cpp/issues/160)
+
+1. How to set MSVC output language to English?
+
+    Install and uninstall related language pack in visual studio installer.
+
+    According to [here](https://stackoverflow.com/questions/2286216/how-to-change-msbuild-error-message-language), Set environment variable `VSLANG=1033`
+
+
+### Challenge1: Use Clang on Windows to build and run tests
+
+
+#### Install Dependencies & Build
+
+CMake is already installed on my computer.
+1. Install latest cmake and select the option that add cmake to path.
+1. Download the LLVM fork from https://github.com/WasmEdge/llvm-windows . **Do not use llvm official release and do not add its `bin` to path**.
+1. Open `LLVM-13.0.1-win64\lib\cmake\llvm\LLVMExports.cmake` and search for `diaguids`, and change from `Enterprise` to `Community`.
+1. Use Visual Studio Installer to install Windows SDK and MSVC. Change Win 11 SDK to Win 10 SDK 10.0.19041.0. **Select Clang 15 and use this as compiler!!**
+1. `vswhere` seems to be already included in Visual Studio Installer. Change its occurrence to absolute path.
+
+Clone the code and check out to `0.12.0`. Follow the instructions: https://wasmedge.org/book/en/contribute/build_from_src/windows.html but add some more cmake flags.
+
+Build script below:
+```
+$vsPath = (&"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+Import-Module (Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64 -winsdk=10.0.19041.0 -vcvars_ver=14.33.31629"
+
+$llvm_dir = "C:\\Users\\warren\\my_programs\\LLVM-13.0.1-win64\\lib\\cmake\\llvm"
+$Env:CC = "clang-cl"
+$Env:CXX = "clang-cl"
+
+cmake -Bbuild -GNinja -DCMAKE_SYSTEM_VERSION="10.0.19041.0" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL "-DLLVM_DIR=$llvm_dir" -DWASMEDGE_BUILD_TESTS=ON -DWASMEDGE_BUILD_PACKAGE="ZIP" .
+if ($?) {
+    cmake --build build
+}
+
+if ($?) {
+    $Env:PATH += ";$pwd\\build\\lib\\api"
+    cd build
+    ctest --output-on-failure
+    cd ..
+}
+```
+
+the output saved using `2>&1 > out.txt` are uploaded as `clang-build.txt`.
+
+**installing LLVM**
+during decompressing the llvm zip file, I notice that `clang-cl.exe` `clang++.exe` are actually symbolic links. If I use explorer to decompress the file, the symbolic links seems broken. I started 7zip file manager with administrator privilege to decompress it, and the result seems to replace the symlink with another copy of the target.
+
+#### test
+
+Follow https://wasmedge.org/book/en/contribute/build_from_src/windows.html#run-tests and all test passed.
+
+![test passed](clang-run-test.png)
+
+##### `Cannot Compile simple program using std::filesystem`
+
+tldr: Do not add the downloaded clang 13 to compile (do not add it to PATH), use clang 15 from Visual Studio Installer instead!!! (it will be automatically added to path when you enter dev shell.)
+
+A few days ago, I can successfully compile, but when I come back to this today, this new error occurred. To debug cmake output, I added `--debug-output` to cmake flags. I found a line in CMakeError.log.
+
+```
+In file included from C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.35.32215\include\filesystem:9:
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.35.32215\include\yvals_core.h(807,1): error: static_assert failed "Error in C++ Standard Library usage."
+_EMIT_STL_ERROR(STL1000, "Unexpected compiler version, expected Clang 15.0.0 or newer.");
+^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.35.32215\include\yvals_core.h(462,5): note: expanded from macro '_EMIT_STL_ERROR'
+
+    static_assert(false, "Error in C++ Standard Library usage.")
+
+    ^             ~~~~~
+
+1 error generated.
+
+ninja: build stopped: subcommand failed.
+```
+
+`filesystem` header is actually found. I need to downgrade MSVC version. But uninstall latest version seems to introduce more problem, so keep the newer version and try to specify MSVC version used. Downgrade to MSVC v142 (2019) will trigger another error, so I tried several previous version of MSVC v143.
+
+According to `Get-Help Enter-VsDevShell` and `VsDevCmd.bat /help`, add `-vcvars_ver=14.29.30133`. Open `C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC` to find out MSVC versions. Finally `14.33.31629` can work.
+
+```
+Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64 -winsdk=10.0.19041.0 -vcvars_ver=14.33.31629"
+```
+
+However, Some tests failed.
+
+```
+The following tests FAILED:
+          8 - wasmedgeExecutorCoreTests (Failed)
+         11 - wasmedgeAPIVMCoreTests (Failed)
+         12 - wasmedgeAPIStepsCoreTests (Failed)
+Errors while running CTest
+```
+
+|     MSVC Version    | CMake | Build? | Test? | Errors                                                           |
+|:-------------------:|:-----:|:------:|:-----:|------------------------------------------------------------------|
+|     14.31.31103     |   √   |    ×   |   -   | undefined symbol: __std_init_once_link_alternate_names_and_abort |
+|     14.32.31326     |   √   |    √   |   ×   | ExecutorCoreTests APIVMCoreTests APIStepsCoreTests failed        |
+|     14.33.31629     |   √   |    √   |   ×   | ExecutorCoreTests APIVMCoreTests APIStepsCoreTests failed        |
+|     14.34.31933     |   ×   |    -   |   -   | Cannot Compile simple program using std::filesystem              |
+| 14.35.32215(latest) |   ×   |    -   |   -   | Cannot Compile simple program using std::filesystem              |
+
+After A few days' trying and error, I finally find out that, I should't use the downloaded clang 13 to compile, use clang 15 from Visual Studio Installer instead!!!
+
+#### Errors I encountered (reverse order)
+
+##### error C3861: '__builtin_expect': identifier not found
+
+[visual studio - likely/unlikely equivalent for MSVC - Stack Overflow](https://stackoverflow.com/questions/1440570/likely-unlikely-equivalent-for-msvc) 
+
+
+
+##### WasmEdge\include\common/enum_errcode.hpp(79): error C7555: use of designated initializers requires at least '/std:c++20'
+
+2023-05-24 
+
+1. add `/std:c++17` to `WASMEDGE_CFLAGS`
+2. add `target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)` according to [here](https://stackoverflow.com/questions/45688522/how-to-enable-c17-in-cmake) 
+3. `set(CMAKE_CXX_STANDARD 17)`  or `-DCMAKE_CXX_STANDARD=17`
+
+TODO
+
+
+
+##### No tests were found!!!
+
+2023-05-13 When I check out to latest tag: `0.12.1`, I got this error.
+
+
+
+##### some test failed due to `std::filesystem`
+
+
+
+##### 2023-05-10 summary
+
+- The MSVC runtime library for LLVM should be the same with WasmEdge.
+- There is an hard-coded library path for `diaguids.lib` in LLVM's cmake file.
+To solve these two issue without upgrading llvm version, it seems that [forking llvm](https://github.com/WasmEdge/llvm-windows) and recompile is the only way.
+
+##### `lld-link: error: undefined symbol: __std_init_once_link_alternate_names_and_abort`
+
+Previously my Visual Studio version is 2019. Upgrading to 2022 solves the issue.
+
+According to [here](https://stackoverflow.com/questions/73749984/qt-6-3-2-compilation-issue)
+> it could not find this new function: __std_init_once_link_alternate_names_and_abort. This function is from STL's import library: msvcprt.lib and was only added in the VS 2022 version: 17.2.5.
+
+##### `ninja: error: 'C:/Program Files/Microsoft Visual Studio/2022/Enterprise/DIA SDK/lib/amd64/diaguids.lib', needed by 'test/aot/wasmedgeAOTCoreTests.exe', missing and no known rule to make it`
+
+Found a related issue: https://github.com/WasmEdge/WasmEdge/issues/1290
+
+Edit `C:\Users\warren\my_programs\LLVM-13.0.1-win64\lib\cmake\llvm\LLVMExports.cmake` and search for `diaguids`, and change from `Enterprise` to `Community`.
+
+
+##### `llvm-mt: error: no libxml2`
+
+tldr: this error disappeared after my environment changed, but if it exist, you can add the flags.
+
+There is an error said: `llvm-mt: error: no libxml2`. This [issue](https://discourse.llvm.org/t/cannot-cmake-self-hosted-clang-on-windows-for-lack-of-libxml2/58793), 
+
+Changing cmake version doesn't seems to work.
+~~I decided to first upgrade my cmake (from 3.21.1) to latest([3.26.3](https://github.com/Kitware/CMake/releases/download/v3.26.3/cmake-3.26.3-windows-x86_64.msi)).~~
+
+- https://github.com/KDAB/GammaRay/issues/458
+
+Finally I think I have to add the following to cmake flags:
+```
+-DCMAKE_EXE_LINKER_FLAGS="/manifest:no" -DCMAKE_MODULE_LINKER_FLAGS="/manifest:no" -DCMAKE_SHARED_LINKER_FLAGS="/manifest:no"
+```
