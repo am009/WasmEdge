@@ -18,28 +18,46 @@ else()
     DIRECTORY
     PROPERTY COMPILE_OPTIONS
   )
-  set_property(
-    DIRECTORY
-    APPEND
-    PROPERTY COMPILE_OPTIONS
-    ${WASMEDGE_CFLAGS}
-    -Wno-language-extension-token
-    -Wno-missing-noreturn
-    -Wno-shift-sign-overflow
-    -Wno-undef
-    -Wno-unused-member-function
-    -Wno-zero-as-null-pointer-constant
-    -Wno-deprecated
-  )
-  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  if(MSVC)
+    set_property(
+        DIRECTORY
+        APPEND
+        PROPERTY COMPILE_OPTIONS
+        ${WASMEDGE_CFLAGS}
+        /Wv:16 # TODO supress less warnings
+        /wd4625
+        /wd4626
+        /wd4668
+        /wd4820
+        /wd4061
+        /wd4365
+        /wd4623
+    )
+  else()
     set_property(
       DIRECTORY
       APPEND
       PROPERTY COMPILE_OPTIONS
-      -Wno-suggest-destructor-override
-      -Wno-suggest-override
+      ${WASMEDGE_CFLAGS}
+      -Wno-language-extension-token
+      -Wno-missing-noreturn
+      -Wno-shift-sign-overflow
+      -Wno-undef
+      -Wno-unused-member-function
+      -Wno-zero-as-null-pointer-constant
+      -Wno-deprecated
     )
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+      set_property(
+        DIRECTORY
+        APPEND
+        PROPERTY COMPILE_OPTIONS
+        -Wno-suggest-destructor-override
+        -Wno-suggest-override
+      )
+    endif()
   endif()
+
   FetchContent_MakeAvailable(GTest)
   set_property(
     DIRECTORY

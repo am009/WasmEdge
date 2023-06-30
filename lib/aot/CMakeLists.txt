@@ -41,6 +41,7 @@ else()
     list(APPEND LLD_LIBS lldDriver)
   endif()
 
+  # /EHs-c-
   llvm_add_library(wasmedgeAOT
     blake3.cpp
     cache.cpp

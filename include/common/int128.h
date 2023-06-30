@@ -13,6 +13,10 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
+#if defined(_MSC_VER)
+#pragma intrinsic(_BitScanForward64)
+#endif
+
 #include <ostream>
 
 #if defined(__x86_64__) || defined(__aarch64__) ||                             \
@@ -261,6 +265,7 @@ public:
   constexpr uint64_t low() const noexcept { return Low; }
   constexpr uint64_t high() const noexcept { return High; }
   constexpr unsigned int clz() const noexcept {
+  #if !defined(_MSC_VER)
     if (High) {
       return __builtin_clzll(High);
     }
@@ -268,6 +273,18 @@ public:
       return __builtin_clzll(Low) + 64;
     }
     return 128;
+  #else
+    unsigned long trailing_zero = 0;
+    if (High) {
+      _BitScanForward64(&trailing_zero, High);
+      return trailing_zero;
+    }
+    if (Low) {
+      _BitScanForward64(&trailing_zero, Low);
+      return trailing_zero + 64;
+    }
+    return 128;
+  #endif
   }
 
 private:

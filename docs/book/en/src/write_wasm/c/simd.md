@@ -87,6 +87,7 @@ static inline uint64_t mand64(const doublex2 init_r[4], const doublex2 init_i) {
 }
 
 int main(int argc, char **argv) {
+  // TODO fix __builtin_expect here
   const uint64_t image_Width_And_Height =
       (__builtin_expect(atoi(argv[1]), 15000) + 7) / 8 * 8;
 

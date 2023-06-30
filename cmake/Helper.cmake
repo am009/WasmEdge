@@ -16,14 +16,23 @@ if(CMAKE_BUILD_TYPE STREQUAL Release OR CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo
   endif()
 endif()
 
-list(APPEND WASMEDGE_CFLAGS
-  -Wall
-  -Wextra
-  -Werror
-  -Wno-error=pedantic
-)
-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-  list(APPEND WASMEDGE_CFLAGS -Wno-psabi)
+if(MSVC)
+  list(APPEND WASMEDGE_CFLAGS
+    /Wall # TODO add equvilent flags
+    # /WX
+    # /wd5264
+    /std:c++20
+  )
+else()
+  list(APPEND WASMEDGE_CFLAGS
+    -Wall
+    -Wextra
+    -Werror
+    -Wno-error=pedantic
+  )
+  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    list(APPEND WASMEDGE_CFLAGS -Wno-psabi)
+  endif()
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -63,24 +72,26 @@ endif()
 
 if(WIN32)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_ENABLE_EXTENDED_ALIGNED_STORAGE -DNOMINMAX -D_ITERATOR_DEBUG_LEVEL=0)
-  list(APPEND WASMEDGE_CFLAGS
-    "/EHa"
-    -Wno-c++98-compat
-    -Wno-c++98-compat-pedantic
-    -Wno-exit-time-destructors
-    -Wno-global-constructors
-    -Wno-used-but-marked-unused
-    -Wno-nonportable-system-include-path
-    -Wno-float-equal
-    -Wno-declaration-after-statement
-    -Wno-zero-as-null-pointer-constant
-    -Wno-implicit-int-float-conversion
-    -Wno-double-promotion
-    -Wno-unsafe-buffer-usage
-    -Wno-deprecated-declarations
-    -Wno-error=rtti
-    -Wno-error=cast-function-type-strict
-  )
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    list(APPEND WASMEDGE_CFLAGS
+      "/EHa"
+      -Wno-c++98-compat
+      -Wno-c++98-compat-pedantic
+      -Wno-exit-time-destructors
+      -Wno-global-constructors
+      -Wno-used-but-marked-unused
+      -Wno-nonportable-system-include-path
+      -Wno-float-equal
+      -Wno-declaration-after-statement
+      -Wno-zero-as-null-pointer-constant
+      -Wno-implicit-int-float-conversion
+      -Wno-double-promotion
+      -Wno-unsafe-buffer-usage
+      -Wno-deprecated-declarations
+      -Wno-error=rtti
+      -Wno-error=cast-function-type-strict
+    )
+  endif()
 endif()
 
 function(wasmedge_setup_target target)
