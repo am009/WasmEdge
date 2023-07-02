@@ -9,9 +9,6 @@ There are two branches:
 
 ## Summary
 
-It's neither fast nor easy to solve these compilation issues, but I think I can do it.
-
-TODO
 
 ## Log
 
@@ -21,11 +18,16 @@ TODO
 
 ## Task
 
+[Weekly Progress, Milestones](https://github.com/WasmEdge/WasmEdge/issues/2629)
+
 [Project on OSPP Website](https://summer-ospp.ac.cn/org/prodetail/238830388?lang=zh&list=pro)
 
 [OSPP feat: Enabling WasmEdge Compilation with MSVC Toolchain](https://github.com/WasmEdge/WasmEdge/issues/2437)
 
 [OSPP 2023 Challenge](https://github.com/WasmEdge/WasmEdge/discussions/2452)
+
+
+
 
 ## Challenge
 
@@ -63,6 +65,24 @@ TODO:
 1. When the compiler is MSVC, not add unsupported flags to `WASMEDGE_CFLAGS`, and find equivalent flags instead.
 1. try to find equivalent code in MSVC for [the `int128.h` issue](https://github.com/WasmEdge/WasmEdge/issues/2419)
 
+#### 2023-07-02 `[[gnu::vector_size(16)]]`
+
+There seems no direct replacement.
+
+https://stackoverflow.com/questions/29435394/replacement-of-typedef-int64-t-x-t-attribute-vector-size16
+
+
+#### 2023-06-30 C++20 designated initializer
+
+<!-- these days working on a compilable version, however stopped by some C++ template error that is hard to understand.  -->
+
+https://stackoverflow.com/questions/19191211/constructor-initialization-of-a-named-union-member
+
+
+#### 2023-06-30 overriding '/EHs' with '/EHs-'
+
+[cmake automatically adds /EHsc](https://cmake.org/pipermail/cmake/2010-December/041638.html) and LLVM add /EHs-c-
+
 
 
 #### gtest build error
@@ -90,6 +110,10 @@ Current solution: supress many warnings in `WasmEdge\test\CMakeLists.txt`.
     Install and uninstall related language pack in visual studio installer.
 
     According to [here](https://stackoverflow.com/questions/2286216/how-to-change-msbuild-error-message-language), Set environment variable `VSLANG=1033`
+
+1. How to debug cmake: [use trace related flags](https://stackoverflow.com/questions/38864489/how-to-trace-cmakelists-txt)
+
+    [CMake cmdline reference](https://cmake.org/cmake/help/v3.5/manual/cmake.1.html)
 
 
 ### Challenge1: Use Clang on Windows to build and run tests
@@ -193,10 +217,31 @@ After A few days' trying and error, I finally find out that, I should't use the 
 
 #### Errors I encountered (reverse order)
 
+##### error C3861: '__builtin_clzll': identifier not found
+
+change according to `thirdparty\blake3\blake3_impl.h` 
+
+https://stackoverflow.com/questions/355967/how-to-use-msvc-intrinsics-to-get-the-equivalent-of-this-gcc-code
+
+The problem is, whether we should use the gcc intrinsic directly in source code? probably there are better practices.
+
+##### error C3861: '__builtin_unreachable': identifier not found
+
+
+
 ##### error C3861: '__builtin_expect': identifier not found
 
-[visual studio - likely/unlikely equivalent for MSVC - Stack Overflow](https://stackoverflow.com/questions/1440570/likely-unlikely-equivalent-for-msvc) 
+[visual studio - likely/unlikely equivalent for MSVC - Stack Overflow](https://stackoverflow.com/questions/1440570/likely-unlikely-equivalent-for-msvc)
 
+Temporarily use the solution here: https://blog.csdn.net/celestialwy/article/details/1352891
+
+https://stackoverflow.com/a/42136453
+
+[To use ifdef to detect MSVC](https://stackoverflow.com/questions/5850358/is-there-a-preprocessor-define-that-is-defined-if-the-compiler-is-msvc)
+
+https://github.com/DLTcollab/sse2neon/issues/384
+
+https://github.com/getsentry/symsynd/blob/master/demangle/llvm/Support/Compiler.h
 
 
 ##### WasmEdge\include\common/enum_errcode.hpp(79): error C7555: use of designated initializers requires at least '/std:c++20'
