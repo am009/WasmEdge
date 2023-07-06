@@ -27,6 +27,79 @@ There are two branches:
 [OSPP 2023 Challenge](https://github.com/WasmEdge/WasmEdge/discussions/2452)
 
 
+## Progress
+
+- 2023-07-05 Start working on rewriting SIMD related parts.
+
+
+### 2023-07-02 `[[gnu::vector_size(16)]]`
+
+I found another important issue that, MSVC does not support attribute `[[gnu::vector_size(16)]]`, and [there seems no direct replacement](https://stackoverflow.com/questions/29435394/replacement-of-typedef-int64-t-x-t-attribute-vector-size16). I found this [OpenMP SIMD Extension](https://learn.microsoft.com/en-us/cpp/parallel/openmp/openmp-simd?view=msvc-170) which is very different from the extension.
+
+- For example, this code, MSVC first report a warning that the attribute `[[gnu::vector_size(16)]]` is unknown. Probably `int32x8_t` directly becomes `int32_t`
+
+https://github.com/WasmEdge/WasmEdge/blob/9a9401fc1413e895a9588533d3cf05d5f389eb4e/include/executor/engine/binary_numeric.ipp#L581-L593
+
+- the arithmetic of these vector types seems to be used a lot (`EV1 * EV2` in the above code, in the following code, and many more), which will do the arithmetic for each element in the array according to [gcc vector extension](https://gcc.gnu.org/onlinedocs/gcc-4.6.1/gcc/Vector-Extensions.html#Vector-Extensions). If MSVC equivalent cannot be found, probably we have to rewrite all these operations for MSVC? We can either rewrite these using loop and hope for the compiler to optimize it to use SIMD instructions, or implement a class (or structure) that override these operations support these operations? I don't know...
+
+https://github.com/WasmEdge/WasmEdge/blob/56a2f13ef61a912888a25e4b2cb168b5090533b4/include/executor/engine/unary_numeric.ipp#L202-L209
+
+#### reimplement the unrolled version
+
+According to the [specification](https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md ), rewrite each part
+
+|instruction|specification|
+|-|-|
+|q15mulr_sat_s|[q15mulr_sat_s](https://github.com/WebAssembly/simd/blob/a78b98a6899c9e91a13095e560767af6e99d98fd/proposals/simd/SIMD.md#saturating-integer-q-format-rounding-multiplication)|
+
+> In C++, the ternary operator ?: is available. a?b:c, where b and c are vectors of the same type and a is an integer vector with the same number of elements of the same size as b and c, computes all three arguments and creates a vector {a[0]?b[0]:c[0], a[1]?b[1]:c[1], …}.
+> (from https://gcc.gnu.org/onlinedocs/gcc/Vector-Extensions.html )
+
+
+### 2023-06-30 C++20 designated initializer
+
+<!-- these days working on a compilable version, however stopped by some C++ template error that is hard to understand.  -->
+
+https://stackoverflow.com/questions/19191211/constructor-initialization-of-a-named-union-member
+
+
+### 2023-06-30 overriding '/EHs' with '/EHs-'
+
+[cmake automatically adds /EHsc](https://cmake.org/pipermail/cmake/2010-December/041638.html) and LLVM add /EHs-c-
+
+
+
+### gtest build error
+
+gtest have `-WX`(regard all warning as error) in their compiler flags (in `build\_deps\gtest-src\googletest\cmake\internal_utils.cmake:75`), but there are still many warnings (which become errors). 
+
+Current solution: supress many warnings in `WasmEdge\test\CMakeLists.txt`.
+
+### log other issues
+
+1. Equivalent flag for `-Wall` `-Wno-xxx` 
+
+    Reference: [MSVC C++ Warning levels](https://learn.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=msvc-170). 
+
+    - For `-Wall` there is `/Wall`.
+    - For `-Wextra`, there seems no equivalent flag?
+    - For `-Werror`, there is `/WX`.
+
+1. Use `if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")` or `if(MSVC)` in cmake.
+
+    It seems better to use `if(MSVC)`. [ref](https://github.com/unittest-cpp/unittest-cpp/issues/160)
+
+1. How to set MSVC output language to English?
+
+    Install and uninstall related language pack in visual studio installer.
+
+    According to [here](https://stackoverflow.com/questions/2286216/how-to-change-msbuild-error-message-language), Set environment variable `VSLANG=1033`
+
+1. How to debug cmake: [use trace related flags](https://stackoverflow.com/questions/38864489/how-to-trace-cmakelists-txt)
+
+    [CMake cmdline reference](https://cmake.org/cmake/help/v3.5/manual/cmake.1.html)
+
+
 
 
 ## Challenge
@@ -64,57 +137,6 @@ cl : Command line error D8021 : invalid numeric argument '/Wextra'
 TODO:
 1. When the compiler is MSVC, not add unsupported flags to `WASMEDGE_CFLAGS`, and find equivalent flags instead.
 1. try to find equivalent code in MSVC for [the `int128.h` issue](https://github.com/WasmEdge/WasmEdge/issues/2419)
-
-#### 2023-07-02 `[[gnu::vector_size(16)]]`
-
-There seems no direct replacement.
-
-https://stackoverflow.com/questions/29435394/replacement-of-typedef-int64-t-x-t-attribute-vector-size16
-
-
-#### 2023-06-30 C++20 designated initializer
-
-<!-- these days working on a compilable version, however stopped by some C++ template error that is hard to understand.  -->
-
-https://stackoverflow.com/questions/19191211/constructor-initialization-of-a-named-union-member
-
-
-#### 2023-06-30 overriding '/EHs' with '/EHs-'
-
-[cmake automatically adds /EHsc](https://cmake.org/pipermail/cmake/2010-December/041638.html) and LLVM add /EHs-c-
-
-
-
-#### gtest build error
-
-gtest have `-WX`(regard all warning as error) in their compiler flags (in `build\_deps\gtest-src\googletest\cmake\internal_utils.cmake:75`), but there are still many warnings (which become errors). 
-
-Current solution: supress many warnings in `WasmEdge\test\CMakeLists.txt`.
-
-#### issue log
-
-1. Equivalent flag for `-Wall` `-Wno-xxx` 
-
-    Reference: [MSVC C++ Warning levels](https://learn.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=msvc-170). 
-
-    - For `-Wall` there is `/Wall`.
-    - For `-Wextra`, there seems no equivalent flag?
-    - For `-Werror`, there is `/WX`.
-
-1. Use `if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")` or `if(MSVC)` in cmake.
-
-    It seems better to use `if(MSVC)`. [ref](https://github.com/unittest-cpp/unittest-cpp/issues/160)
-
-1. How to set MSVC output language to English?
-
-    Install and uninstall related language pack in visual studio installer.
-
-    According to [here](https://stackoverflow.com/questions/2286216/how-to-change-msbuild-error-message-language), Set environment variable `VSLANG=1033`
-
-1. How to debug cmake: [use trace related flags](https://stackoverflow.com/questions/38864489/how-to-trace-cmakelists-txt)
-
-    [CMake cmdline reference](https://cmake.org/cmake/help/v3.5/manual/cmake.1.html)
-
 
 ### Challenge1: Use Clang on Windows to build and run tests
 
