@@ -32,6 +32,30 @@ There are two branches:
 - 2023-07-05 Start working on rewriting SIMD related parts.
 
 
+### 2023-07-08 int128Test.cpp `error C2593: 'operator ~' is ambiguous`
+
+Somehow, the 32bit related logic in `include\common\int128.h` is compiled, probably because the `defined(__x86_64__)` is false. In MSVC, it seems to be `_WIN64` or `_M_X64`.
+
+There seems [no __int128 equivalent in MSVC](https://stackoverflow.com/questions/6759592/how-to-enable-int128-on-visual-studio)
+
+[_MSC_VER is also defined by MSVC clang](https://stackoverflow.com/questions/67406228/clang-on-windows-how-to-disable-the-default-msvc-compatibility) and 
+
+some unused code: 
+```C++
+  friend constexpr uint128_t operator*(uint128_t LHS, long long RHS) noexcept {
+    return LHS * uint128_t(RHS);
+  }
+  friend constexpr uint128_t operator*(long long LHS, uint128_t RHS) noexcept {
+    return uint128_t(LHS) * RHS;
+  }
+```
+
+### 2023-07-06 attribute 'gnu::always_inline' is not recognized
+
+The replacement seems to be [`__forceinline`](https://learn.microsoft.com/en-us/cpp/cpp/inline-functions-cpp?view=msvc-170)
+
+> You can't force the compiler to inline a particular function, even with the __forceinline keyword. When you compile with /clr, the compiler won't inline a function if there are security attributes applied to the function.
+
 ### 2023-07-02 `[[gnu::vector_size(16)]]`
 
 I found another important issue that, MSVC does not support attribute `[[gnu::vector_size(16)]]`, and [there seems no direct replacement](https://stackoverflow.com/questions/29435394/replacement-of-typedef-int64-t-x-t-attribute-vector-size16). I found this [OpenMP SIMD Extension](https://learn.microsoft.com/en-us/cpp/parallel/openmp/openmp-simd?view=msvc-170) which is very different from the extension.
@@ -48,9 +72,11 @@ https://github.com/WasmEdge/WasmEdge/blob/56a2f13ef61a912888a25e4b2cb168b5090533
 
 According to the [specification](https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md ), rewrite each part
 
-|instruction|specification|
+|instruction|specification and reference|
 |-|-|
 |q15mulr_sat_s|[q15mulr_sat_s](https://github.com/WebAssembly/simd/blob/a78b98a6899c9e91a13095e560767af6e99d98fd/proposals/simd/SIMD.md#saturating-integer-q-format-rounding-multiplication)|
+|replace_lane|[replace_lane](https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md#replace-lane-value)|
+|i8x16.popcnt|[i8x16.popcnt](https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md#lane-wise-population-count) and [this answer](https://stackoverflow.com/a/30692782)|
 
 > In C++, the ternary operator ?: is available. a?b:c, where b and c are vectors of the same type and a is an integer vector with the same number of elements of the same size as b and c, computes all three arguments and creates a vector {a[0]?b[0]:c[0], a[1]?b[1]:c[1], …}.
 > (from https://gcc.gnu.org/onlinedocs/gcc/Vector-Extensions.html )
