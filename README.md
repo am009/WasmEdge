@@ -7,6 +7,8 @@ There are two branches:
 - OSPP (current branch) for notes and logs.
 - am009/msvc_support for development
 
+Guideline: While solving compiler errors, split modifications into many small commits. When trying to organize modifications, use git rebase interactive to move similar commits together, and optionally squash them.
+
 ## Summary
 
 
@@ -31,6 +33,34 @@ There are two branches:
 
 - 2023-07-05 Start working on rewriting SIMD related parts.
 
+
+### 2023-07-10 notes on `__x86_64__`
+
+There are a few places where we assume `__x86_64__` is undefined under MSVC. (still defined when using clang-cl)
+- `lib/aot/compiler.cpp`. It will use some llvm x86_64 intrinsics like `LLVM::Core::X86SSE41RoundPs`.
+- `include\common\int128.h` so that the class version instead of `__int128` version will be used. Probably we should use [`__SIZEOF_INT128__`](https://stackoverflow.com/questions/18531782/how-to-know-if-uint128-t-is-defined) here.
+
+Besides, [clang-cl will also define `_MSC_VER` unless a `-fmsc-version=0` flag is provided](https://stackoverflow.com/questions/67406228/clang-on-windows-how-to-disable-the-default-msvc-compatibility).
+
+### 2023-07-10 `lib\executor\engine\proxy.cpp` array designator initializer
+
+[array designator initializer is supported in clang-cl but not in MSVC](https://learn.microsoft.com/en-us/answers/questions/1165265/c-array-designator-initializer-does-not-work-with?orderby=oldest)
+
+
+### 2023-07-10 `[[gnu::visibility("default")]]`
+
+In `include\api\wasmedge\wasmedge.h` there is a WASMEDGE_CAPI_EXPORT that does basically the same thing. However, the macro `WASMEDGE_COMPILE_LIBRARY` is only defined in the api directory (in `lib\api\CMakeLists.txt:5`).
+
+
+There is a [gcc wiki](https://gcc.gnu.org/wiki/Visibility) talking about this. But the macro definition is too complex. According to [this tutorial](https://medium.com/ai-innovation/how-to-create-c-c-dynamic-link-libraries-in-windows-28abefc988c9), `__attribute__ ((dllimport))` seems not necessary. [Here](https://chromium.googlesource.com/chromium/llvm-project/llvm/lib/Fuzzer/+/024d10da8a13ee7c61e0f47914dc845edb70ec2f%5E%21/) is a place where similar macro `ATTRIBUTE_INTERFACE` like the following are used.
+
+```
+#ifdef _MSC_VER
+    #define WASMEDGE_EXPORT __declspec(dllexport)
+#else
+    #define WASMEDGE_EXPORT [[gnu::visibility("default")]]
+#endif
+```
 
 ### 2023-07-08 int128Test.cpp `error C2593: 'operator ~' is ambiguous`
 
@@ -100,6 +130,36 @@ https://stackoverflow.com/questions/19191211/constructor-initialization-of-a-nam
 gtest have `-WX`(regard all warning as error) in their compiler flags (in `build\_deps\gtest-src\googletest\cmake\internal_utils.cmake:75`), but there are still many warnings (which become errors). 
 
 Current solution: supress many warnings in `WasmEdge\test\CMakeLists.txt`.
+
+
+##### error C3861: '__builtin_clzll': identifier not found
+
+In `include/common/int128.h` `clz()`, an intrinsic is used.
+
+change according to `thirdparty\blake3\blake3_impl.h` 
+
+https://stackoverflow.com/questions/355967/how-to-use-msvc-intrinsics-to-get-the-equivalent-of-this-gcc-code
+
+##### error C3861: '__builtin_unreachable': identifier not found
+
+[`__assume(0)` can indicate unreachable code path](https://learn.microsoft.com/en-us/cpp/intrinsics/assume?view=msvc-170#remarks)
+
+[another discussion](https://stackoverflow.com/questions/60802864/emulating-gccs-builtin-unreachable-in-visual-studio)
+
+##### error C3861: '__builtin_expect': identifier not found
+
+[visual studio - likely/unlikely equivalent for MSVC - Stack Overflow](https://stackoverflow.com/questions/1440570/likely-unlikely-equivalent-for-msvc)
+
+Temporarily use the solution here: https://blog.csdn.net/celestialwy/article/details/1352891
+
+https://stackoverflow.com/a/42136453
+
+[To use ifdef to detect MSVC](https://stackoverflow.com/questions/5850358/is-there-a-preprocessor-define-that-is-defined-if-the-compiler-is-msvc)
+
+https://github.com/DLTcollab/sse2neon/issues/384
+
+https://github.com/getsentry/symsynd/blob/master/demangle/llvm/Support/Compiler.h
+
 
 ### log other issues
 
@@ -264,33 +324,6 @@ Errors while running CTest
 After A few days' trying and error, I finally find out that, I should't use the downloaded clang 13 to compile, use clang 15 from Visual Studio Installer instead!!!
 
 #### Errors I encountered (reverse order)
-
-##### error C3861: '__builtin_clzll': identifier not found
-
-change according to `thirdparty\blake3\blake3_impl.h` 
-
-https://stackoverflow.com/questions/355967/how-to-use-msvc-intrinsics-to-get-the-equivalent-of-this-gcc-code
-
-The problem is, whether we should use the gcc intrinsic directly in source code? probably there are better practices.
-
-##### error C3861: '__builtin_unreachable': identifier not found
-
-
-
-##### error C3861: '__builtin_expect': identifier not found
-
-[visual studio - likely/unlikely equivalent for MSVC - Stack Overflow](https://stackoverflow.com/questions/1440570/likely-unlikely-equivalent-for-msvc)
-
-Temporarily use the solution here: https://blog.csdn.net/celestialwy/article/details/1352891
-
-https://stackoverflow.com/a/42136453
-
-[To use ifdef to detect MSVC](https://stackoverflow.com/questions/5850358/is-there-a-preprocessor-define-that-is-defined-if-the-compiler-is-msvc)
-
-https://github.com/DLTcollab/sse2neon/issues/384
-
-https://github.com/getsentry/symsynd/blob/master/demangle/llvm/Support/Compiler.h
-
 
 ##### WasmEdge\include\common/enum_errcode.hpp(79): error C7555: use of designated initializers requires at least '/std:c++20'
 
