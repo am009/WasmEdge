@@ -46,15 +46,21 @@ https://github.com/WasmEdge/WasmEdge/blob/9a9401fc1413e895a9588533d3cf05d5f389eb
 
 https://github.com/WasmEdge/WasmEdge/blob/56a2f13ef61a912888a25e4b2cb168b5090533b4/include/executor/engine/unary_numeric.ipp#L202-L209
 
-#### reimplement the unrolled version
+#### reimplement the unrolled version for SIMD instructions
 
-According to the [specification](https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md ), rewrite each part
+Background: Because MSVC does not support `gnu::vector_size` or equivalent, we need to implement unrolled version of SIMD instructions. Many implementations are in `*.ipp` files, and we can create MSVC version of these ipp files, use `#ifdef` to include them.
+
+According to the [specification](https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md ), rewrite each part of the instructions.
+
+The first decision is to make these vector type using std::array. e.g., `using int8x16_t = std::array<int8_t, 16>;`. The reason why not choose plain array type, is related to the implementation of `ValVariant`. Using plain array type will cause some wired errors.
 
 |instruction|specification and reference|
 |-|-|
 |q15mulr_sat_s|[q15mulr_sat_s](https://github.com/WebAssembly/simd/blob/a78b98a6899c9e91a13095e560767af6e99d98fd/proposals/simd/SIMD.md#saturating-integer-q-format-rounding-multiplication)|
 |replace_lane|[replace_lane](https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md#replace-lane-value)|
 |i8x16.popcnt|[i8x16.popcnt](https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md#lane-wise-population-count) and [this answer](https://stackoverflow.com/a/30692782)|
+
+The `WasmEdge::Executor::detail::vectorSelect` also can not be used, because the ternary operator:
 
 > In C++, the ternary operator ?: is available. a?b:c, where b and c are vectors of the same type and a is an integer vector with the same number of elements of the same size as b and c, computes all three arguments and creates a vector {a[0]?b[0]:c[0], a[1]?b[1]:c[1], …}.
 > (from https://gcc.gnu.org/onlinedocs/gcc/Vector-Extensions.html )
