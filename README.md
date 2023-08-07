@@ -74,11 +74,14 @@ using vscode's replace to replace the definition of some type with `gnu::vector_
 
 #### `vectorSelect `
 
+TODO
+
 ### 2023-07-10 notes on `__x86_64__`
 
-There are a few places where we assume `__x86_64__` is undefined under MSVC. (still defined when using clang-cl)
+There are a few places where we assume `__x86_64__` is not defined under MSVC. (still defined when using clang-cl) (In MSVC, it seems to be `_WIN64` or `_M_X64`?). 
 - `lib/aot/compiler.cpp`. It will use some llvm x86_64 intrinsics like `LLVM::Core::X86SSE41RoundPs`.
-- `include\common\int128.h` so that the class version instead of `__int128` version will be used. Probably we should use [`__SIZEOF_INT128__`](https://stackoverflow.com/questions/18531782/how-to-know-if-uint128-t-is-defined) here.
+- `include\common\int128.h` so that the class version instead of `__int128` version will be used. This might actually be a good thing because these code simulates int128 behavior using a class and MSVC does not have the int128 type.
+    - P.S., Probably we should use [`__SIZEOF_INT128__`](https://stackoverflow.com/questions/18531782/how-to-know-if-uint128-t-is-defined) to check for the existence of `__int128` here? 
 
 Besides, [clang-cl will also define `_MSC_VER` unless a `-fmsc-version=0` flag is provided](https://stackoverflow.com/questions/67406228/clang-on-windows-how-to-disable-the-default-msvc-compatibility).
 
