@@ -32,7 +32,83 @@ Guideline: While solving compiler errors, split modifications into many small co
 ## Progress
 
 - 2023-07-05 Start working on rewriting SIMD related parts. (MSVC: unroll SIMD to avoid gnu vector.)
+- 2023-08-09 Finally leave the dilemma of SIMD.
+- 2023-08-10 Find a bug in int128.h
 
+### 2023-08-10 fabs error
+
+In two test cases for `f32.abs`, 
+    - Input 2139156962 (hex 0x7f80f1e2, NAN) (), expected output is the same
+    - Input 4286640610 (hex 0xff80f1e2, -NAN) expected output is 2139156962 (hex 0x7f80f1e2, NAN), MSVC result 2143351266 (hex 0x7fc0f1e2 NAN). According to IEEE 754 fp, the highest bit of `fraction` is set by `std::fabs`.
+
+This is confirmed by the following code:
+```cpp
+#include<array>
+#include<iostream>
+#include<cmath>
+
+
+int main() {
+    // 10000000000000ULL
+    uint32_t before = 0x7f80f1e2;
+    float before_f = reinterpret_cast<float&>(before);
+    std::cout << "before: " << before << ", (" << before_f << std::endl;
+    float after_f = std::fabs(before_f);
+    uint32_t after = reinterpret_cast<uint32_t&>(after_f);;
+    std::cout << "after: " << after << ", (" << after_f << std::endl;
+    return 0;
+}
+/* MSVC
+before: 2139156962, (nan
+after: 2143351266, (nan
+*/
+/* g++
+before: 2139156962, (nan
+after: 2139156962, (nan
+*/
+```
+
+[a intro to ieee 754](http://www.fredosaurus.com/notes-java/data/basic_types/numbers-floatingpoint/ieee754.html)
+
+
+### 2023-08-10 Debug test suite
+
+At `test\spec\spectest.cpp:468` (`SpecTest::run`) set conditional breakpoint: `_strcmpi(UnitName._Mydata, "float_misc") == 0`
+
+### 2023-08-10 `test\api\APIUnitTest.cpp` `a parenthesized type followed by an initializer list is a non-standard explicit type conversion syntax`
+
+https://stackoverflow.com/questions/33270731/error-c4576-in-vs2015-enterprise
+
+Just remove the parentheses?
+
+### 2023-08-09 avoid `std::swap` in `constexpr` function.
+
+Because [`std::swap` is not marked as constexpr before c++20](https://stackoverflow.com/questions/60674939/why-isnt-stdswap-marked-constexpr-before-c20).
+
+### 2023-08-09 `__restrict__` not found
+
+In MSVC, use [`__restrict`](https://learn.microsoft.com/en-us/cpp/cpp/extension-restrict?view=msvc-170)
+
+[Introduction to restrict](https://cellperformance.beyond3d.com/articles/2006/05/demystifying-the-restrict-keyword.html).
+
+> The restrict keyword can be considered an extension to the strict aliasing rule. It allows the programmer to declare that pointers which share the same type (or were otherwise validly created) do not alias eachother.
+
+```
+E:\OSPP\WasmEdge\lib\host\wasi\wasifunc.cpp(368): error C2734: '__restrict__': 'const' object must be initialized if not 'extern'
+E:\OSPP\WasmEdge\lib\host\wasi\wasifunc.cpp(368): error C3531: '__restrict__': a symbol whose type contains 'auto' must have an initializer
+E:\OSPP\WasmEdge\lib\host\wasi\wasifunc.cpp(368): error C2146: syntax error: missing ';' before identifier 'Argc'
+```
+
+### 2023-08-09 `'byte': ambiguous symbol`
+
+```
+E:\OSPP\WasmEdge\include\experimental/span.hpp(250): error C2872: 'byte': ambiguous symbol
+C:\Program Files (x86)\Windows Kits\10\include\10.0.19041.0\shared\rpcndr.h(191): note: could be 'unsigned char byte'
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.34.31933\include\cstddef(28): note: or       'std::byte'
+E:\OSPP\WasmEdge\include\host/wasi/environ.h(850): note: see reference to function template instantiation 'auto cxx20::as_writable_bytes<uint8_t,18446744073709551615>(cxx20::span<uint8_t,18446744073709551615>) noexcept' being compiled
+E:\OSPP\WasmEdge\include\experimental/span.hpp(229): warning C4623: 'cxx20::span<const uint32_t,1>': default constructor was implicitly defined as deleted
+E:\OSPP\WasmEdge\include\host/wasi/environ.h(854): note: see reference to class template instantiation 'cxx20::span<const uint32_t,1>' being compiled
+```
 
 ### `[[gnu::vector_size(16)]]` related
 
@@ -69,12 +145,10 @@ The `WasmEdge::Executor::detail::vectorSelect` also can not be used, because the
 
 using vscode's replace to replace the definition of some type with `gnu::vector_size` into `std::array`:
 
-- `using ([^\s]+) \[\[gnu::vector_size\(([0-9]+)\)\]\] = ([^\s;]+);` -> `using $1 = std::array<$3, ($2 / sizeof($3))>;`
+- `using ([^\s]+) \[\[gnu::vector_size\(([0-9]+)\)\]\] = ([^\s;]+);` -> `using $1 = SIMDArray<$3, $2>`
+- ~~`using ([^\s]+) \[\[gnu::vector_size\(([0-9]+)\)\]\] = ([^\s;]+);` -> `using $1 = std::array<$3, ($2 / sizeof($3))>;`~~
+    - `std::array<([a-zA-Z0-9_]+), \(([0-9]+) / sizeof\(([a-zA-Z0-9_]+)\)\)>` -> `SIMDArray<$1, $2>`
 - ~~`using ([^\s]+) \[\[gnu::vector_size\(([0-9]+)\)\]\] = ([^\s;]+);` -> `constexpr int32_t Len = $2 / sizeof($3);\n  using $1 = std::array<$3, Len>;`~~
-
-#### `vectorSelect `
-
-TODO
 
 ### 2023-07-10 notes on `__x86_64__`
 
@@ -88,6 +162,8 @@ Besides, [clang-cl will also define `_MSC_VER` unless a `-fmsc-version=0` flag i
 ### 2023-07-10 `lib\executor\engine\proxy.cpp` array designator initializer
 
 [array designator initializer is supported in clang-cl but not in MSVC](https://learn.microsoft.com/en-us/answers/questions/1165265/c-array-designator-initializer-does-not-work-with?orderby=oldest)
+
+We can use [the syntax of aggregate initialization](https://stackoverflow.com/questions/13056366/can-i-initialize-a-union-in-a-mem-initializer) by commenting out the member initializer, or [write constructor](https://stackoverflow.com/questions/321351/initializing-a-union-with-a-non-trivial-constructor) for each union member.
 
 
 ### 2023-07-10 `[[gnu::visibility("default")]]`
