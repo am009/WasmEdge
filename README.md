@@ -70,6 +70,31 @@ after: 2139156962, (nan
 
 [a intro to ieee 754](http://www.fredosaurus.com/notes-java/data/basic_types/numbers-floatingpoint/ieee754.html)
 
+### 2023-08-11 test failed caused by `ofstream` replace line break from `\n` to `\r\n`
+
+https://stackoverflow.com/questions/69100690/msvc-c-compiler-option-to-prevent-replacing-lf-by-cr-lf-in-ostream-ofstream
+
+In `test\api\APIUnitTest.cpp:1097` (APICoreTest, Compiler, HexToFile function). The `HexToFile` uses `std::ofstream`.
+
+Without specifying the binary mode, the MSVC implementation will replace `\n` to `\r\n`.
+
+### 2023-08-11 uninitialized flags caused wasi test hang.
+
+Because of the uninitialized flags(`include\host\wasi\inode.h` `INode` `__wasi_fdflags_t`), In MSVC, the non-block flag is not set properly and cause the failure of WasiTest.PollOneoffSocketV1.
+
+### 2023-08-10 `i32x4.trunc_sat_f32x4_s` test failed
+
+Think this code:
+```
+int limit = std::numeric_limits<int>::max();
+limit = (int) ((float) limit)
+```
+
+`2147483647` -> `2.14748365e+09` -> `-2147483648`
+
+Actually float is more imprecise around the edge of limit, so if the cast makes the number across the edge, it will overflow if casted back.
+
+So if the float is at the limit (== 2.14748365e+09), directly use the limit.
 
 ### 2023-08-10 Debug test suite
 
