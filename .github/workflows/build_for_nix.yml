@@ -32,6 +32,7 @@ on:
       - "tools/**"
       - "CMakeLists.txt"
       - "cmake/**"
+  workflow_dispatch:
 
 jobs:
   build_nix:

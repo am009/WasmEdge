@@ -15,6 +15,7 @@ on:
       - master
     paths:
       - 'docs/witx/**'
+  workflow_dispatch:
 
 jobs:
   gen_doc:

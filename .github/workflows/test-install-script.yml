@@ -21,6 +21,7 @@ on:
       - 'utils/install.sh'
       - 'utils/uninstall.sh'
       - 'utils/install.py'
+  workflow_dispatch:
 
 env:
   INSTALL_PY_PATH: utils/install.py

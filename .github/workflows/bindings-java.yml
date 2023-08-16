@@ -21,6 +21,7 @@ on:
       - "bindings/java/**"
       - "include/api/wasmedge/**"
       - "lib/api/**"
+  workflow_dispatch:
 
 jobs:
   build_ubuntu:

@@ -21,6 +21,7 @@ on:
       - 'utils/install.sh'
       - 'utils/uninstall.sh'
       - 'utils/install.py'
+  workflow_dispatch:
 
 jobs:
   lint:

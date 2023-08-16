@@ -21,6 +21,7 @@ on:
       - "lib/host/wasi/**"
       - "include/host/wasi/**"
       - "thirdparty/wasi/**"
+  workflow_dispatch:
 
 jobs:
   test:

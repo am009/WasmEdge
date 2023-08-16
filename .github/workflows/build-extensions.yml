@@ -34,6 +34,7 @@ on:
       - "cmake/**"
       - "utils/wasi-nn/**"
       - "utils/wasi-crypto/**"
+  workflow_dispatch:
 
 jobs:
   # TODO: Refactor `lint` with `on.workflow_run`

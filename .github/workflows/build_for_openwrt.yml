@@ -34,6 +34,7 @@ on:
       - "tools/**"
       - "CMakeLists.txt"
       - "cmake/**"
+  workflow_dispatch:
 
 jobs:
   # TODO: Refactor `lint` with `on.workflow_run`
