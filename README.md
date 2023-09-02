@@ -35,6 +35,45 @@ Guideline: While solving compiler errors, split modifications into many small co
 - 2023-08-09 Finally leave the dilemma of SIMD.
 - 2023-08-10 Find a bug in int128.h
 
+### 2023-09-02 add static_cast
+
+`(\w+\.size\(\))` => `static_cast<int>($1)`
+
+### 2023-08-31 change designator code style
+
+`/\*\.(.+?) =\*/( ?)` => `/* $1 */ `
+
+### 2023-06-30 overriding '/EHs' with '/EHs-'
+
+[cmake automatically adds /EHsc](https://cmake.org/pipermail/cmake/2010-December/041638.html) and LLVM add /EHs-c-
+
+
+### CMake Flags
+
+1. Equivalent flag for `-Wall` `-Wno-xxx` 
+
+    Reference: [MSVC C++ Warning levels](https://learn.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=msvc-170). Warning level 1 (severe), level 2 (significant), 3 (production quality), 4 (informational).
+
+    - For `-Wall` there is `/Wall`.
+    - For `-Wextra`, there seems no equivalent flag?
+    - For `-Werror`, there is `/WX`.
+    However, [MSVC `/Wall` is too verbose, and should use `/W4`](https://stackoverflow.com/questions/37527946/warning-unreferenced-inline-function-has-been-removed). So I'll start with `/W4`
+
+
+1. Use `if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")` or `if(MSVC)` in cmake.
+
+    Notice that, MSVC is also set using `clang-cl`. So Use . See [this question](https://stackoverflow.com/questions/10046114/in-cmake-how-can-i-test-if-the-compiler-is-clang)
+
+
+### 2023-08-11 alignment error
+
+On x86_64 (especially MSVC), LLVM will generate SSE related instructions for accessing global variable, and many of these instructions requires alignment (16-bytes). The absence of alignment will trigger memory access error, and many AOT related test will fail.
+
+AOTCoreTest `TestSuites/69` failed (SIMD related), It reports memory out of bound access, but after checking, actually it's just general memory error, not necessarily out of bound access. (At `lib\system\fault.cpp` `vectoredExceptionHandler` windows part, it emits error according to the exception type, which is `EXCEPTION_ACCESS_VIOLATION_`.) The JIT/AOT code error is hard to debug, the stack trace is not very useful. I tried to dump the generated IR by insert debug print code to precisely break at the test case. However, the IR turned out to be identical to the normal one. 
+
+Finally, I find that actually it is not about the code; The address being accessed is totally fine. the fault instruction uses `movdqa`, and I realized that this instruction requires memory alignment. the address accessed is not 16-bytes aligned!!
+
+
 ### 2023-08-10 fabs error
 
 In two test cases for `f32.abs`, 
@@ -70,13 +109,11 @@ after: 2139156962, (nan
 
 [a intro to ieee 754](http://www.fredosaurus.com/notes-java/data/basic_types/numbers-floatingpoint/ieee754.html)
 
-### 2023-08-11 test failed caused by `ofstream` replace line break from `\n` to `\r\n`
+### 2023-08-12 
 
-https://stackoverflow.com/questions/69100690/msvc-c-compiler-option-to-prevent-replacing-lf-by-cr-lf-in-ostream-ofstream
+the failure of `WasiTest.PollOneoffSocketV1` is caused by the timeout value is not big enough? I think.
 
-In `test\api\APIUnitTest.cpp:1097` (APICoreTest, Compiler, HexToFile function). The `HexToFile` uses `std::ofstream`.
-
-Without specifying the binary mode, the MSVC implementation will replace `\n` to `\r\n`.
+[WASI pull_oneoff](https://github.com/WebAssembly/WASI/blob/4712d490fd7662f689af6faa5d718e042f014931/legacy/preview1/docs.md#-poll_oneoffin-constpointersubscription-out-pointerevent-nsubscriptions-size---resultsize-errno)
 
 ### 2023-08-11 uninitialized flags caused wasi test hang.
 
@@ -237,12 +274,6 @@ The replacement seems to be [`__forceinline`](https://learn.microsoft.com/en-us/
 https://stackoverflow.com/questions/19191211/constructor-initialization-of-a-named-union-member
 
 
-### 2023-06-30 overriding '/EHs' with '/EHs-'
-
-[cmake automatically adds /EHsc](https://cmake.org/pipermail/cmake/2010-December/041638.html) and LLVM add /EHs-c-
-
-
-
 ### gtest build error
 
 gtest have `-WX`(regard all warning as error) in their compiler flags (in `build\_deps\gtest-src\googletest\cmake\internal_utils.cmake:75`), but there are still many warnings (which become errors). 
@@ -281,17 +312,6 @@ https://github.com/getsentry/symsynd/blob/master/demangle/llvm/Support/Compiler.
 
 ### log other issues
 
-1. Equivalent flag for `-Wall` `-Wno-xxx` 
-
-    Reference: [MSVC C++ Warning levels](https://learn.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=msvc-170). 
-
-    - For `-Wall` there is `/Wall`.
-    - For `-Wextra`, there seems no equivalent flag?
-    - For `-Werror`, there is `/WX`.
-
-1. Use `if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")` or `if(MSVC)` in cmake.
-
-    It seems better to use `if(MSVC)`. [ref](https://github.com/unittest-cpp/unittest-cpp/issues/160)
 
 1. How to set MSVC output language to English?
 
