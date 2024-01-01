@@ -1,3 +1,219 @@
+# WasmEdge Windows Related issues
+
+Do some notes during the investigation of issues.
+
+### 2023-12-29
+
+In CI tests, only MSVC build failed on two testcases. See [this issue](https://github.com/WasmEdge/WasmEdge/issues/3113).
+
+In the testcase, a module have a table of 2 external reference, but when setting or getting them, runtime reports that table access is out of bound. 
+
+```wast
+(module $m
+	(table $t (export "table") 2 externref)
+	(func (export "get") (param $i i32) (result externref)
+	      (table.get $t (local.get $i)))
+	(func (export "set") (param $i i32) (param $x externref)
+	      (table.set $t (local.get $i) (local.get $x))))
+
+(register "exporter" $m)
+
+(assert_return (invoke $m "get" (i32.const 0)) (ref.null extern))
+(assert_return (invoke $m "get" (i32.const 1)) (ref.null extern))
+```
+
+Previously, MSVC build have some quirks:
+- not initialize some value to zero.
+
+Start to debug it. Here is the debug config. PATH is required for the exe to find the dll. Because we use MSVC as the compiler, we use cppvsdbg to debug. The key is `--gtest_filter=*TestSuites/16`.
+
+```json
+{
+    "name": "spectest",
+    "type": "cppvsdbg",
+    "request": "launch",
+    "program": "${workspaceFolder}/build/test/aot/wasmedgeAOTCoreTests.exe",
+    "args": ["--gtest_filter=*TestSuites/16"],
+    "symbolSearchPath": "${workspaceFolder}/build/test/aot",
+    "logging": {
+    "moduleLoad": false,
+    "trace": true
+    },
+    "cwd": "${workspaceFolder}/build/test/aot",
+    "environment": [{"name": "PATH", "value": "%PATH%;${workspaceFolder}/build/lib/api"}],
+    "visualizerFile": "${workspaceFolder}/my.natvis",
+    "showDisplayString": true
+}
+```
+
+The test log said it is a `out of bounds table access` error, we search the code, and search `TableOutOfBounds` again, and find `WasmEdge\include\runtime\instance\table.h`. set breakpoint at those places where the error message is printed.
+
+Then, we see that, at the inst, the table index is 0, correct. But the offset is 0xf1dd3560? The call stack showed `elem.66.dll`, which means the code is JIT compiled to native code. Because it is JITed. Next we should print the LLVM IR to debug.
+
+first use wasm2wat to build\test\spec\testSuites\core\elem\elem.66.wasm. Search for `.ll"`, there are two places where the IR is printed. No need to recompile, just set the breakpoint at the if branch checking debug enabled, and execute in debug console: `LLModule.printModuleToFile("wasm-opt.ll")`.
+
+In the test, the program visits each line of the json file:
+
+```
+  {"type": "register", "line": 661, "name": "$m", "as": "exporter"}, 
+  {"type": "assert_return", "line": 663, "action": {"type": "invoke", "module": "$m", "field": "get", "args": [{"type": "i32", "value": "0"}]}, "expected": [{"type": "externref", "value": "null"}]},
+```
+
+At the second line, it invokes the function in module "$m", with a single argument i32 0.
+
+```wat
+(module
+  (type (;0;) (func (param i32) (result externref)))
+  (type (;1;) (func (param i32 externref)))
+  (func (;0;) (type 0) (param i32) (result externref)
+    local.get 0
+    table.get 0)
+  (func (;1;) (type 1) (param i32 externref)
+    local.get 0
+    local.get 1
+    table.set 0)
+  (table (;0;) 2 externref)
+  (export "table" (table 0))
+  (export "get" (func 0))
+  (export "set" (func 1)))
+```
+
+The function fetches the table 0 with offset from the argument. In the following LLVM IR, it corresponds to `%8 = tail call i64 %7(i32 0, i32 %4) #4`. In this call inst, the `%7` is table_get function provided by the runtime. However, during the process, the offset becomes a extremely large value. This time, it is 0xff1b1020.
+
+```llvm
+; Function Attrs: strictfp
+define protected dllexport void @t0(ptr noalias readonly %0, ptr noalias %1, ptr noalias %2, ptr noalias %3) #1 {
+entry:
+  %4 = getelementptr inbounds i8, ptr %2, i64 0
+  %5 = load i32, ptr %4, align 4
+  %6 = tail call i64 %1(ptr %0, i32 %5) #4
+  %7 = getelementptr inbounds i8, ptr %3, i64 0
+  store i64 %6, ptr %7, align 4
+  ret void
+}
+
+; Function Attrs: strictfp
+define protected dllexport void @t1(ptr noalias readonly %0, ptr noalias %1, ptr noalias %2, ptr noalias %3) #1 {
+entry:
+  %4 = getelementptr inbounds i8, ptr %2, i64 0
+  %5 = load i32, ptr %4, align 4
+  %6 = getelementptr inbounds i8, ptr %2, i64 16
+  %7 = load i64, ptr %6, align 4
+  tail call void %1(ptr %0, i32 %5, i64 %7) #4
+  ret void
+}
+
+; Function Attrs: strictfp
+define protected dllexport i64 @f0(ptr noalias readonly %0, i32 %1) #1 {
+entry:
+  %2 = load %ExecCtx, ptr %0, align 8
+  %3 = alloca i32, align 4
+  store i32 %1, ptr %3, align 4
+  %4 = load i32, ptr %3, align 4
+  %5 = load ptr, ptr @intrinsics, align 8, !invariant.group !1
+  %6 = getelementptr inbounds [23 x ptr], ptr %5, i64 0, i64 9
+  %7 = load ptr, ptr %6, align 8
+  %8 = tail call i64 %7(i32 0, i32 %4) #4
+  br label %ret
+
+ret:                                              ; preds = %entry
+  ret i64 %8
+}
+
+; Function Attrs: strictfp
+define protected dllexport void @f1(ptr noalias readonly %0, i32 %1, i64 %2) #1 {
+entry:
+  %3 = load %ExecCtx, ptr %0, align 8
+  %4 = alloca i32, align 4
+  store i32 %1, ptr %4, align 4
+  %5 = alloca i64, align 8
+  store i64 %2, ptr %5, align 4
+  %6 = load i32, ptr %4, align 4
+  %7 = load i64, ptr %5, align 4
+  %8 = load ptr, ptr @intrinsics, align 8, !invariant.group !1
+  %9 = getelementptr inbounds [23 x ptr], ptr %8, i64 0, i64 10
+  %10 = load ptr, ptr %9, align 8
+  %11 = tail call i64 %10(i32 0, i32 %6, i64 %7) #4
+  br label %ret
+
+ret:                                              ; preds = %entry
+  ret void
+}
+```
+
+The following function is called. This is the proxy function in the intrinsics function pointers table.
+
+```cpp
+template <typename RetT, typename... ArgsT>
+struct Executor::ProxyHelper<Expect<RetT> (Executor::*)(Runtime::StackManager &,
+                                                        ArgsT...) noexcept> {
+  template <Expect<RetT> (Executor::*Func)(Runtime::StackManager &,
+                                           ArgsT...) noexcept>
+  static auto proxy(ArgsT... Args)
+#if !WASMEDGE_OS_WINDOWS
+      noexcept
+#endif
+  {
+    Expect<RetT> Res = (This->*Func)(*CurrentStack, Args...);
+    if (unlikely(!Res)) {
+      Fault::emitFault(Res.error());
+    }
+    if constexpr (!std::is_void_v<RetT>) {
+      return *Res;
+    }
+  }
+};
+```
+
+This code used [C++ member function pointer](https://stackoverflow.com/questions/1485983/how-can-i-create-a-pointer-to-a-member-function-and-call-it) in a template.
+
+```cpp
+WasmEdge::RefVariant *__fastcall ___proxy__1_tableGet_Executor_2WasmEdge__QEAA_AV__expected_URefVariant_WasmEdge__VErrCode_2__cxx20__AEAVStackManager_Runtime_3_II_Z___ProxyHelper_P8Executor_1WasmEdge__EAA_AV__expected_URefVariant_WasmEdge__VErrCode_2__cxx20__AEAVStackManager_Runtime_2_II__E_Executor_1WasmEdge__SA_A_PII_Z(
+        WasmEdge::RefVariant *result,
+        unsigned int <Args_0>,
+        unsigned int <Args_1>)
+{
+  __int64 *v3; // rdi
+  __int64 i; // rcx
+  WasmEdge::ErrCode *v5; // rax
+  __int64 v6; // rax
+  __int64 v8; // [rsp+0h] [rbp-78h] BYREF
+  __int64 v9; // [rsp+30h] [rbp-48h] BYREF
+  cxx20::expected<WasmEdge::RefVariant,WasmEdge::ErrCode> v10; // [rsp+38h] [rbp-40h] BYREF
+  char v11; // [rsp+54h] [rbp-24h] BYREF
+  char *v12; // [rsp+58h] [rbp-20h]
+  WasmEdge::Executor::Executor *v13; // [rsp+60h] [rbp-18h]
+  bool v14; // [rsp+68h] [rbp-10h]
+
+  v3 = &v9;
+  for ( i = 16i64; i; --i )
+  {
+    *(_DWORD *)v3 = -858993460;
+    v3 = (__int64 *)((char *)v3 + 4);
+  }
+  v13 = *(WasmEdge::Executor::Executor **)(*((_QWORD *)NtCurrentTeb()->Reserved1[11] + tls_index) + 344i64);
+  WasmEdge::Executor::Executor::tableGet(
+    v13,
+    &v10,
+    *(WasmEdge::Runtime::StackManager **)(*((_QWORD *)NtCurrentTeb()->Reserved1[11] + tls_index) + 336i64),
+    <Args_0>,
+    <Args_1>);
+  v14 = !cxx20::expected<WasmEdge::RefVariant,WasmEdge::ErrCode>::operator bool(&v10);
+  if ( WasmEdge::unlikely_19(v14) )
+  {
+    v12 = &v11;
+    v5 = cxx20::detail::expected_view_base<WasmEdge::RefVariant,WasmEdge::ErrCode>::error(&v10);
+    v6 = ((__int64 (__fastcall *)(char *, WasmEdge::ErrCode *))WasmEdge::ErrCode::ErrCode)(v12, v5);
+    ((void (__fastcall *)(__int64))WasmEdge::Fault::emitFault)(v6);
+  }
+  result->Ptr = cxx20::expected<WasmEdge::RefVariant,WasmEdge::ErrCode>::operator*(&v10)->Ptr;
+  j__RTC_CheckStackVars(&v8, (_RTC_framedesc *)&unk_1435B7920);
+  return result;
+}
+```
+
+Probably it is related to [return value optimization or Copy Elision](https://stackoverflow.com/questions/12953127/what-are-copy-elision-and-return-value-optimization). C++ 17 enforces return value optimization. In MSVC, there is ([Mandatory copy and move elision](https://learn.microsoft.com/en-us/cpp/build/reference/zc-nrvo?view=msvc-170#mandatory-copy-and-move-elision)).
+
 
 # OSPP 2023
 
